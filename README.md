@@ -85,6 +85,10 @@ The terminal is rendered using [xterm.js](https://xtermjs.org/), providing full 
 
 ## Version History
 
+### v1.0.3 (2026-03-28)
+- Fix: terminal scrollbar styled to match sidebar (thin, themed)
+- Updated screenshot
+
 ### v1.0.2 (2026-03-28)
 - Paste support: Ctrl+V, Shift+Insert, right-click
 - Ctrl+click to open links (browser) and file paths (Explorer/Finder)

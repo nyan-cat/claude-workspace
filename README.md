@@ -89,6 +89,14 @@ The terminal is rendered using [xterm.js](https://xtermjs.org/), providing full 
 
 ## Version History
 
+### v1.0.4 (2026-03-29)
+- Ctrl+Tab / Ctrl+Shift+Tab to cycle focus between workspace sessions
+- Drag-and-drop reordering: groups, sessions (within/between groups), workspace columns
+- Matrix theme with animated falling katakana rain (bundled Matrix Code NFI font)
+- Light theme: improved ANSI color contrast
+- Fix: session path encoding — dots in directory names
+- Fix: Ctrl+Tab double-fire on 2 sessions
+
 ### v1.0.3 (2026-03-28)
 - Fix: terminal scrollbar styled to match sidebar (thin, themed)
 - Updated screenshot

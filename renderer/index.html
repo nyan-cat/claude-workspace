@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <canvas id="matrixCanvas" class="matrix-canvas"></canvas>
   <div class="app">
     <!-- Header -->
     <header class="header" style="-webkit-app-region: drag;">
@@ -87,7 +88,7 @@
   <!-- Rename modal -->
   <div class="modal-overlay" id="renameOverlay">
     <div class="modal">
-      <h3>Rename Session</h3>
+      <h3>Edit Session</h3>
       <form id="renameForm">
         <div class="form-group">
           <label for="renameField">Name</label>
@@ -149,6 +150,7 @@ The quick brown fox jumps over lazy dog</div>
         <select id="settingsTheme">
           <option value="dark">Dark</option>
           <option value="light">Light</option>
+          <option value="matrix">Matrix</option>
         </select>
       </div>
 
@@ -181,8 +183,8 @@ The quick brown fox jumps over lazy dog</div>
         <span class="about-title">Claude Workspace</span>
       </div>
       <div class="about-body">
-        <p>Version 1.0.3</p>
-        <p>Built 2026-03-28</p>
+        <p>Version 1.0.4</p>
+        <p>Built 2026-03-29</p>
         <p class="about-dim">Desktop app for managing multiple Claude Code sessions simultaneously.</p>
         <p class="about-link"><a href="#" id="aboutGithub">github.com/nyan-cat/claude-workspace</a></p>
         <p class="about-copy">&copy; 2026 Denis Sibilev</p>

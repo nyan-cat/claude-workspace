@@ -2,14 +2,14 @@
 
 ## What is this
 Electron desktop app for managing multiple Claude Code sessions simultaneously.
-Workspace config: `workspace.json`.
+Workspace config: `workspace.json`. Version: 1.0.4.
 
 ## Architecture
 
 ### Main process (`main.js`)
 - Electron BrowserWindow with `titleBarStyle: 'hidden'` + `titleBarOverlay` (Windows)
 - `nodeIntegration: true`, `contextIsolation: false`, no preload.js
-- IPC handlers for workspace CRUD, session start/stop/write/resize, rename, settings, layouts, dialog:selectFolder, app:platform, multi-monitor (displays:get, window:getBounds, window:getContentBounds, window:spanAllMonitors)
+- IPC handlers: workspace CRUD, session start/stop/write/resize/rename/move, group create/delete/move, settings, layouts, dialog:selectFolder, app:platform, multi-monitor (displays:get, window:getBounds, window:getContentBounds, window:spanAllMonitors)
 - Single instance lock (`app.requestSingleInstanceLock()`)
 - Content-Security-Policy set in HTML meta tag
 
@@ -23,27 +23,24 @@ Workspace config: `workspace.json`.
 - New sessions: `claude --session-id <uuid>`
 - Existing sessions: `claude --resume <uuid>` (checked via `.jsonl` file existence)
 - Claude stores sessions in `~/.claude/projects/<encoded-path>/<session-uuid>.jsonl`
-- Path encoding: `D:\projects\foo` → `D--projects-foo` (colon becomes dash, not removed)
+- Path encoding: colon → dash, slash → dash, dot → dash (`D:\projects\foo.bar` → `D--projects-foo-bar`)
 - **Important**: `--session-id` on existing session = "already in use" error. Must use `--resume`.
 - **Important**: node-pty may need manual rebuild for Electron on Windows (see README)
 
 ### Workspace store (`src/workspace-store.js`)
-- Reads/writes `workspace.json` (BOM-safe)
-- Creates default workspace.json if missing
-- CRUD for groups/sessions, renameSession
+- Reads/writes `workspace.json` (BOM-safe), creates default if missing
+- CRUD for groups/sessions, renameSession, moveGroup, moveSession
 - Settings, layouts, claudeSessionExists/deleteClaudeSession
-- Path encoding for Claude session detection: colon → dash, slash → dash
 
 ### Renderer (`renderer/`)
-- `index.html` — layout, modals (create session/group, rename, alert/confirm, settings, help, about)
-- `app.js` — all UI logic, xterm.js terminals, IPC
+- `index.html` — layout, modals (create session/group, edit, alert/confirm, settings, help, about)
+- `app.js` — all UI logic, xterm.js terminals, IPC, Matrix rain animation
 - `styles.css` — full styling, @font-face for bundled fonts
 - `icons.js` — loads Lucide SVG icons from node_modules
-- `fonts/` — JetBrains Mono, Fira Code, Hack (woff2)
+- `fonts/` — JetBrains Mono, Fira Code, Hack, Matrix Code NFI (woff2)
 
 ### Icons
-- Lucide icons (MIT, `lucide-static` npm package)
-- SVG with rounded corners (stroke-linecap/linejoin round)
+- Lucide icons (MIT, `lucide-static` npm package), SVG with rounded corners
 - Loaded at startup via `icons.js`, inserted into DOM as innerHTML
 
 ### Data storage
@@ -53,115 +50,124 @@ Workspace config: `workspace.json`.
 
 ## UI Design
 
-### Color palette — dark/light theme system
-- Themes defined in `THEMES` object in app.js with full xterm theme per-mode
-- Dark theme: desaturated cyan accent `#6bb8b0`, dark backgrounds `#0c1115`
-- Light theme: darker cyan accent `#2a8a80`, light backgrounds `#f5f5f0`
-- Applied via CSS variables, switchable in Settings
+### Themes
+Three themes in `THEMES` object: `dark`, `light`, `matrix`
+- **Dark**: desaturated cyan accent `#6bb8b0`, dark backgrounds `#0c1115`
+- **Light**: darker cyan accent `#2a8a80`, light backgrounds `#f5f5f0`, dark ANSI colors for contrast
+- **Matrix**: pure black `#000000`, bright green `#00ff41`, animated falling katakana rain
+- Applied via CSS variables + xterm theme objects, switchable in Settings
+
+### Matrix rain animation
+- Full-screen canvas overlay (`position: fixed`, `z-index: 9999`, `pointer-events: none`)
+- Grid of stationary characters (katakana + digits), "streams" are brightness waves moving down
+- Characters don't move — illusion from gradient moving down and new chars appearing at head
+- Head char: appears with fast fade-in, assigned when stream advances to new row
+- Trail: quadratic alpha fade (`fade * fade`), 15-45 chars long
+- Per-stream brightness variation: 0.15..1.0
+- Two-pass rendering: glow layer (larger font, low alpha) + sharp layer
+- Matrix Code NFI font (bundled woff2), loaded via `document.fonts.load()` before animation starts
+- ~0.2% grid cells mutate per frame (subtle flickering)
+- Only active when theme === 'matrix', cleaned up on theme switch
 
 ### Layout
-- Header — terminal icon logo + workspace name + span-monitors button (right side, 140px margin from window controls)
+- Header — terminal icon logo + workspace name + span-monitors button (140px right margin for Windows title bar buttons)
 - Sidebar (left) — groups → sessions → layouts, resizable (min 140px, max 400px, width persisted)
-- Sidebar resizer: 6px with negative margins (invisible but easy to grab), z-index 5
-- Workspace tabs bar — horizontal tabs for all running sessions, above workspace grid
+- Sidebar resizer: 6px with negative margins, z-index 5
+- Workspace tabs bar — horizontal tabs for all running sessions
 - Workspace body — CSS Grid, single row of columns (smart multi-monitor alignment)
 
 ### Font system
 - All UI uses terminal font (same family and size everywhere)
 - CSS variables `--font-ui` and `--font-size-ui`, all sizes in `em`
 - Bundled: JetBrains Mono, Fira Code, Hack. System: Cascadia Code, Consolas, Courier New
+- Matrix Code NFI: only for rain animation, not in font selector
 
 ### Navigation
 - **Click** — opens single session (closes others)
 - **Ctrl/Cmd+Click** — adds session to workspace
-- **Ctrl/Cmd+F4** — hides active session (only in xterm handler, not document level)
+- **Ctrl/Cmd+F4** — hides active session (only in xterm handler)
+- **Ctrl+Tab / Ctrl+Shift+Tab** — cycle focus between visible sessions (only in xterm handler, not document level — prevents double-fire)
 - **Alt/Option+F4** — close app
 - Same click behavior on workspace tabs and sidebar
 
+### Drag-and-drop
+- **Groups**: drag group header to reorder in sidebar, saves to workspace.json via `moveGroup`
+- **Sessions**: drag session item within or between groups, saves via `moveSession`
+- **Workspace columns**: drag session header bar to reorder columns (reorders `visibleSessionIds` Set)
+- Visual feedback: `.dragging` (opacity 0.4), `.drag-over` (accent outline)
+
 ### Keybinding groups (layouts)
-- **Ctrl/Cmd+digit** — save layout, **Alt/Option+digit** — recall layout
+- **Ctrl/Cmd+digit** — save, **Alt/Option+digit** — recall
 - Handlers in both xterm and document keydown
 - Stored in `workspace.json` under `layouts`
-- Sidebar shows as expandable groups with `Alt+N` / `Option+N` headers
+- Sidebar: expandable groups with `Alt+N` / `Option+N` headers
 - recallKeybindingGroup calls setActiveSession to sync focus
 
 ### Multi-monitor
-- **Span all monitors button** in header (maximize icon)
-- `window:spanAllMonitors` IPC — calculates bounding rect using workArea intersection (respects taskbar)
-- `calcGridColumns()` — async function that queries displays and content bounds, calculates column widths so each session fits within one monitor
-- Falls back to `repeat(N, 1fr)` on single monitor or errors
+- **Span all monitors button** in header
+- `window:spanAllMonitors` — bounding rect using workArea intersection (respects taskbar)
+- `calcGridColumns()` — async, queries displays, calculates column widths per monitor
+- Falls back to `repeat(N, 1fr)` on single monitor
 
 ### Multi-window workspace
-- CSS Grid columns, no gap (tiles separated by barely-visible border)
-- Focused session: lighter bg, xterm bg changes dynamically, title bold/bright
-- Session header: bold title, same-size working dir, close button (×) on right
-- `updateWorkspaceLayout()` tracks `lastVisibleKey` — skips DOM rebuild if visible set unchanged
-- Per-session resize dedup: `lastSentSize` tracks cols,rows — skips PTY resize if unchanged
-
-### Workspace tabs bar
-- Shows all running sessions as horizontal tabs above workspace
-- Each tab: status dot + name, same click/Ctrl+click behavior as sidebar
-- Hidden when no sessions running
+- CSS Grid columns, no gap, barely-visible border between tiles
+- Focused session: lighter bg (xterm bg changes dynamically), title bold/bright
+- Session header: bold title, same-size working dir, close button (×)
+- `updateWorkspaceLayout()` tracks `lastVisibleKey` — skips DOM rebuild if unchanged
+- Per-session resize dedup: `lastSentSize` tracks cols,rows
 
 ### Session indicators in sidebar
 - Gray dot — not running
 - Green 70% — running, not in workspace
 - Green 100% + glow — running and visible
-- Silence progress bar: 5 segments, fills 1/sec, resets on output
+- Silence progress bar: 5 segments, 1/sec, resets on output
 - `updateSilenceBars()` called at end of `renderSidebar()` to prevent flash-to-zero
 
 ### Starting overlay
-- Shows "Starting..." centered over terminal container while Claude boots
-- Hidden when first printable characters detected via `extractPrintable()` (strips all ANSI CSI/OSC sequences including private mode `?` sequences)
+- "Starting..." centered over terminal, hidden on first printable characters via `extractPrintable()` (strips ANSI CSI/OSC including private mode `?` sequences)
 
 ### Clipboard
-- **Copy**: Ctrl/Cmd+C (with selection), Ctrl/Cmd+Insert, Enter — uses `e.code` for layout-independent detection
+- **Copy**: Ctrl/Cmd+C (with selection), Ctrl/Cmd+Insert, Enter — uses `e.code`
 - **Paste**: Ctrl/Cmd+V (`e.code === 'KeyV'`), Shift+Insert, Right Click
-- Selection rendered with inverted colors
 
 ### Clickable links (Ctrl+click)
-- URLs: regex detection, opens browser via `shell.openExternal`
-- Windows paths: custom `findWinPaths()` parser — handles spaces in names, file extensions, multiple paths per line, trailing punctuation trimming
-- Unix paths: regex for /home, /usr, etc.
-- File paths: if target is a file, opens parent directory
-- Activated only on Ctrl/Cmd+click
-- Windows Explorer opened via `start "" explorer "path"` for foreground focus
+- URLs: regex, opens browser via `shell.openExternal`
+- Windows paths: `findWinPaths()` — handles spaces, extensions, multiple per line, trailing punctuation. Lookbehind `(?<![a-zA-Z])` prevents matching `https://` as drive letter
+- File paths: opens parent directory if target is file
+- Opens via `start "" explorer "path"` for foreground focus
 
 ### Dialogs
-- **Custom alert/confirm** — styled modal dialogs (`prompt()`/`alert()` unreliable in Electron)
-- **Rename** — modal with pre-filled name
-- All modals close on Escape (cascading priority check)
-- Delete session blocked if running
+- Custom alert/confirm modals, Edit Session modal
+- All close on Escape (cascading priority)
+- Delete blocked if session running
 
 ### Session management UI
-- **Open dir**: folder icon → opens working directory in Explorer (via `start "" explorer`)
-- **Rename**: pencil icon → modal dialog
+- **Open dir**: folder icon → `start "" explorer`
+- **Edit**: pencil icon → modal
 - **Stop**: circle-stop icon
 - **Delete**: trash icon, blocked if running
-- **New session**: folder picker button (OS native dialog)
+- **New session**: folder picker (OS native dialog)
 
-### Settings page
-- Font family, font size (slider 10-24px), theme (dark/light)
-- Live preview with syntax-highlighted code sample
-- Sidebar width persisted on resize mouseup
+### Settings
+- Font family, font size (10-24px), theme (dark/light/matrix)
+- Live preview with syntax highlighting
+- Sidebar width persisted on resize
 
 ### Help & About
-- Help: description left / shortcuts right, platform-aware (Ctrl/Cmd, Alt/Option), includes copy/paste/newline
-- About: version 1.0.2, built 2026-03-28, copyright Denis Sibilev, GitHub link
+- Help: description left / shortcuts right, platform-aware, includes copy/paste/newline/Ctrl+Tab
+- About: version, build date, copyright Denis Sibilev, GitHub link
 
 ## Build
 - `electron-builder --dir` with `asar: false`, `signAndEditExecutable: false`, `CSC_IDENTITY_AUTO_DISCOVERY=false`
-- Output: `dist/win-unpacked/`
-- `publish.cmd` — builds, zips, creates GitHub release (contains PAT token, gitignored)
-- workspace.json created next to exe (`app.isPackaged ? dirname(execPath) : __dirname`)
-- When deploying, preserve existing workspace.json in target directory
-- **Never commit .zip artifacts to git** (causes huge push times)
+- `publish.cmd` — builds, zips, creates GitHub release (gitignored, contains PAT)
+- workspace.json next to exe when packaged
+- Preserve existing workspace.json when deploying
 
 ## Known issues / Notes
 - GPU cache errors on launch when previous instance holds lock — harmless
-- `prompt()` doesn't work in Electron — use custom modal dialogs
-- `--session-id` on existing session = "already in use". Must use `--resume`.
-- `--resume` only works when cwd matches the project directory
-- Ctrl+F4 only in xterm handler (not document) to avoid double-close
-- Single .exe build not feasible with Electron + node-pty native module
-- publish.cmd contains GitHub PAT — gitignored, never commit
+- `prompt()` doesn't work in Electron — use custom modals
+- `--session-id` on existing = "already in use". Must use `--resume`.
+- `--resume` only works when cwd matches project directory
+- Ctrl+F4 and Ctrl+Tab only in xterm handler (not document) to avoid double-fire
+- Canvas `shadowBlur` unreliable in Chromium — glow done via oversized font passes instead
+- Path encoding must match Claude's: colon, slash, AND dot → dash

@@ -105,7 +105,8 @@ class WorkspaceStore {
       .replace(/\\/g, '/')
       .replace(/\/$/, '')
       .replace(/:/g, '-')
-      .replace(/\//g, '-');
+      .replace(/\//g, '-')
+      .replace(/\./g, '-');
     const sessionFile = path.join(homedir, '.claude', 'projects', encoded, `${sessionId}.jsonl`);
     return fs.existsSync(sessionFile);
   }
@@ -116,9 +117,38 @@ class WorkspaceStore {
       .replace(/\\/g, '/')
       .replace(/\/$/, '')
       .replace(/:/g, '-')
-      .replace(/\//g, '-');
+      .replace(/\//g, '-')
+      .replace(/\./g, '-');
     const sessionFile = path.join(homedir, '.claude', 'projects', encoded, `${sessionId}.jsonl`);
     try { fs.unlinkSync(sessionFile); } catch {}
+  }
+
+  // Reorder
+  moveGroup(fromIndex, toIndex) {
+    const groups = this.data.groups;
+    if (fromIndex < 0 || fromIndex >= groups.length || toIndex < 0 || toIndex >= groups.length) return;
+    const [group] = groups.splice(fromIndex, 1);
+    groups.splice(toIndex, 0, group);
+    this.save();
+  }
+
+  moveSession(sessionId, toGroupIndex, toPosition) {
+    // Remove from current group
+    let session = null;
+    for (const group of this.data.groups) {
+      const idx = group.sessions.findIndex(s => s.id === sessionId);
+      if (idx !== -1) {
+        [session] = group.sessions.splice(idx, 1);
+        break;
+      }
+    }
+    if (!session) return;
+    // Insert into target group
+    const targetGroup = this.data.groups[toGroupIndex];
+    if (!targetGroup) return;
+    const pos = Math.min(toPosition, targetGroup.sessions.length);
+    targetGroup.sessions.splice(pos, 0, session);
+    this.save();
   }
 
   // Layouts (keybinding groups)

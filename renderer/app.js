@@ -23,6 +23,8 @@ const api = {
   createSession: (gi, name, dir) => ipcRenderer.invoke('session:create', gi, name, dir),
   deleteSession: (id) => ipcRenderer.invoke('session:delete', id),
   renameSession: (id, name) => ipcRenderer.invoke('session:rename', id, name),
+  moveGroup: (from, to) => ipcRenderer.invoke('group:move', from, to),
+  moveSession: (id, toGroup, toPos) => ipcRenderer.invoke('session:move', id, toGroup, toPos),
   selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
   onSessionData: (cb) => ipcRenderer.on('session:data', (e, id, data) => cb(id, data)),
   onSessionExit: (cb) => ipcRenderer.on('session:exit', (e, id, code) => cb(id, code)),
@@ -74,17 +76,35 @@ const THEMES = {
     xterm: {
       background: '#f5f5f0', foreground: '#1a1a18', cursor: '#2a8a80', cursorAccent: '#f5f5f0',
       selectionBackground: '#1a1a18', selectionForeground: '#f5f5f0',
-      black: '#1a1a18', red: '#c0504d', green: '#3a8a5a', yellow: '#8a7a30',
-      blue: '#3a6a9f', magenta: '#7a5a9f', cyan: '#2a8a80', white: '#f5f5f0',
-      brightBlack: '#9a9a95', brightRed: '#d4605c', brightGreen: '#4a9a6a', brightYellow: '#9a8a40',
-      brightBlue: '#4a7abf', brightMagenta: '#8a6aaf', brightCyan: '#3a9a90', brightWhite: '#ffffff',
+      black: '#1a1a18', red: '#b82020', green: '#1a7a35', yellow: '#7a6a00',
+      blue: '#1a55a0', magenta: '#7a3a9f', cyan: '#0a7a70', white: '#4a4a45',
+      brightBlack: '#6a6a65', brightRed: '#d03030', brightGreen: '#2a8a45', brightYellow: '#8a7a10',
+      brightBlue: '#2a65b0', brightMagenta: '#8a4aaf', brightCyan: '#1a8a80', brightWhite: '#2a2a25',
     },
     bgFocusedXterm: '#fafaf7',
+  },
+  matrix: {
+    bgPrimary: '#000000', bgSecondary: '#0a0a0a', bgTertiary: '#0f1a0f',
+    bgHover: '#0a2a0a', bgActive: '#0a3a0a', bgFocused: '#020802',
+    textPrimary: '#00ff41', textSecondary: '#00aa2a', textDim: '#005a15',
+    accent: '#00ff41', accentHover: '#33ff66', accentDim: '#00ff4118',
+    danger: '#ff3030', success: '#00ff41', border: '#0a2a0a',
+    titleBarColor: '#0a0a0a', titleBarSymbol: '#00aa2a',
+    xterm: {
+      background: '#000000', foreground: '#00ff41', cursor: '#00ff41', cursorAccent: '#000000',
+      selectionBackground: '#00ff41', selectionForeground: '#000000',
+      black: '#000000', red: '#ff3030', green: '#00ff41', yellow: '#ccff00',
+      blue: '#00aaff', magenta: '#aa00ff', cyan: '#00ffaa', white: '#00ff41',
+      brightBlack: '#005a15', brightRed: '#ff5050', brightGreen: '#33ff66', brightYellow: '#ddff33',
+      brightBlue: '#33bbff', brightMagenta: '#bb33ff', brightCyan: '#33ffbb', brightWhite: '#aaffaa',
+    },
+    bgFocusedXterm: '#020802',
   },
 };
 
 function applyTheme() {
   const t = THEMES[currentSettings.theme] || THEMES.dark;
+  document.documentElement.dataset.theme = currentSettings.theme;
   const r = document.documentElement.style;
   r.setProperty('--bg-primary', t.bgPrimary);
   r.setProperty('--bg-secondary', t.bgSecondary);
@@ -104,6 +124,195 @@ function applyTheme() {
   document.querySelectorAll('.session-view').forEach(el => {
     el.style.borderColor = t.border;
   });
+  updateMatrixRain();
+}
+
+// Matrix rain animation
+let matrixAnimId = null;
+
+function startMatrixRain() {
+  if (matrixAnimId) return;
+  const canvas = document.getElementById('matrixCanvas');
+  if (!canvas) return;
+
+  // Wait for Matrix font to load before starting
+  document.fonts.load("16px 'Matrix Code NFI'").then(() => {
+    _startMatrixRainInner(canvas);
+  });
+}
+
+function _startMatrixRainInner(canvas) {
+  if (matrixAnimId) return;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  canvas.classList.add('active');
+
+  const ctx = canvas.getContext('2d');
+  const charSet = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFZ';
+  const fontSize = 16;
+  let cols = Math.floor(canvas.width / fontSize);
+  let rows = Math.floor(canvas.height / fontSize);
+
+  // Grid of fixed characters — each cell has a char that only changes occasionally
+  let grid = [];
+  // Each column has one or more "streams" — a wave of brightness moving down
+  let streams = [];
+
+  function initGrid() {
+    cols = Math.floor(canvas.width / fontSize);
+    rows = Math.floor(canvas.height / fontSize);
+    grid = [];
+    for (let c = 0; c < cols; c++) {
+      grid[c] = [];
+      for (let r = 0; r < rows; r++) {
+        grid[c][r] = charSet[Math.floor(Math.random() * charSet.length)];
+      }
+    }
+  }
+
+  function initStreams() {
+    streams = [];
+    for (let c = 0; c < cols; c++) {
+      // 1-2 streams per column
+      const count = 1 + (Math.random() > 0.7 ? 1 : 0);
+      for (let s = 0; s < count; s++) {
+        streams.push({
+          col: c,
+          head: Math.random() * -rows * 2,
+          speed: 0.24 + Math.random() * 0.32,
+          length: 15 + Math.floor(Math.random() * 30),
+          brightness: 0.15 + Math.random() * 0.85, // 0.15..1.0
+        });
+      }
+    }
+  }
+
+  initGrid();
+  initStreams();
+
+  const onResize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    initGrid();
+    initStreams();
+  };
+  window.addEventListener('resize', onResize);
+  canvas._onResize = onResize;
+
+  let frame = 0;
+  function draw() {
+    frame++;
+    if (frame % 3 !== 0) { matrixAnimId = requestAnimationFrame(draw); return; }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = fontSize + "px 'Matrix Code NFI', monospace";
+    ctx.shadowColor = 'none';
+    ctx.shadowBlur = 0;
+
+    // Occasionally mutate random grid cells (flickering effect)
+    const mutations = Math.floor(cols * rows * 0.002);
+    for (let m = 0; m < mutations; m++) {
+      const c = Math.floor(Math.random() * cols);
+      const r = Math.floor(Math.random() * rows);
+      grid[c][r] = charSet[Math.floor(Math.random() * charSet.length)];
+    }
+
+    // Collect all visible chars with their alpha
+    const visibleChars = [];
+    for (const stream of streams) {
+      const headRow = Math.floor(stream.head);
+      const headFade = stream.head - headRow;
+      const b = stream.brightness;
+
+      for (let t = 0; t < stream.length; t++) {
+        const row = headRow - t;
+        if (row < 0 || row >= rows) continue;
+
+        const char = grid[stream.col][row];
+        const x = stream.col * fontSize;
+        const y = (row + 1) * fontSize;
+
+        let r = 0, g = 255, bl = 65, a = 0;
+        if (t === 0) {
+          r = 180; g = 255; bl = 180;
+          a = Math.min(1, headFade * 5) * 0.22 * b;
+        } else if (t === 1) {
+          r = 180; g = 255; bl = 180;
+          a = 0.22 * b;
+        } else if (t < 4) {
+          a = 0.16 * b;
+        } else {
+          const fade = 1 - t / stream.length;
+          a = Math.max(0.003, 0.1 * b * fade * fade);
+        }
+
+        if (a > 0.003) visibleChars.push({ char, x, y, r, g, bl, a });
+      }
+
+      const prevHead = Math.floor(stream.head);
+      stream.head += stream.speed;
+      const newHead = Math.floor(stream.head);
+
+      // Only assign new random char when head moves to a new row
+      if (newHead > prevHead && newHead >= 0 && newHead < rows) {
+        grid[stream.col][newHead] = charSet[Math.floor(Math.random() * charSet.length)];
+      }
+
+      // Reset when fully off screen
+      if (headRow - stream.length > rows) {
+        stream.head = Math.random() * -rows;
+        stream.speed = 0.3 + Math.random() * 0.4;
+        stream.length = 15 + Math.floor(Math.random() * 30);
+        stream.brightness = 0.4 + Math.random() * 0.6;
+      }
+    }
+
+    // Pass 1: glow — larger, semi-transparent characters offset slightly as soft halo
+    const glowSize = fontSize + 6;
+    ctx.font = glowSize + "px 'Matrix Code NFI', monospace";
+    for (const c of visibleChars) {
+      const ga = c.a * 0.3;
+      if (ga < 0.005) continue;
+      ctx.fillStyle = `rgba(0, 255, 65, ${ga})`;
+      ctx.fillText(c.char, c.x - 3, c.y + 1);
+    }
+    // Pass 1b: second glow layer even larger
+    const glowSize2 = fontSize + 12;
+    ctx.font = glowSize2 + "px 'Matrix Code NFI', monospace";
+    for (const c of visibleChars) {
+      const ga = c.a * 0.12;
+      if (ga < 0.003) continue;
+      ctx.fillStyle = `rgba(0, 255, 65, ${ga})`;
+      ctx.fillText(c.char, c.x - 6, c.y + 2);
+    }
+
+    // Pass 2: sharp characters
+    ctx.font = fontSize + "px 'Matrix Code NFI', monospace";
+    for (const c of visibleChars) {
+      ctx.fillStyle = `rgba(${c.r}, ${c.g}, ${c.bl}, ${c.a})`;
+      ctx.fillText(c.char, c.x, c.y);
+    }
+
+    matrixAnimId = requestAnimationFrame(draw);
+  }
+
+  draw();
+}
+
+function stopMatrixRain() {
+  const canvas = document.getElementById('matrixCanvas');
+  if (canvas) {
+    canvas.classList.remove('active');
+    if (canvas._onResize) { window.removeEventListener('resize', canvas._onResize); canvas._onResize = null; }
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  if (matrixAnimId) { cancelAnimationFrame(matrixAnimId); matrixAnimId = null; }
+}
+
+function updateMatrixRain() {
+  if (currentSettings.theme === 'matrix') startMatrixRain();
+  else stopMatrixRain();
 }
 
 function applyCssFont() {
@@ -240,6 +449,38 @@ function renderSidebar() {
     groupEl.className = 'group';
     const isCollapsed = collapsedGroups.has(gi);
 
+    // Group drag-and-drop
+    groupEl.draggable = true;
+    groupEl.dataset.groupIndex = gi;
+    groupEl.addEventListener('dragstart', (e) => {
+      if (e.target !== groupEl) return;
+      e.dataTransfer.setData('type', 'group');
+      e.dataTransfer.setData('groupIndex', gi);
+      groupEl.classList.add('dragging');
+    });
+    groupEl.addEventListener('dragend', () => groupEl.classList.remove('dragging'));
+    groupEl.addEventListener('dragover', (e) => {
+      const type = e.dataTransfer.types.includes('type') ? 'ok' : null;
+      if (type) { e.preventDefault(); groupEl.classList.add('drag-over'); }
+    });
+    groupEl.addEventListener('dragleave', () => groupEl.classList.remove('drag-over'));
+    groupEl.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      groupEl.classList.remove('drag-over');
+      const type = e.dataTransfer.getData('type');
+      if (type === 'group') {
+        const fromIndex = parseInt(e.dataTransfer.getData('groupIndex'));
+        if (fromIndex !== gi) {
+          workspace = await api.moveGroup(fromIndex, gi);
+          renderSidebar();
+        }
+      } else if (type === 'session') {
+        const sessionId = e.dataTransfer.getData('sessionId');
+        workspace = await api.moveSession(sessionId, gi, 0);
+        renderSidebar();
+      }
+    });
+
     const header = document.createElement('div');
     header.className = 'group-header';
     header.innerHTML = `
@@ -276,9 +517,41 @@ function renderSidebar() {
     const sessionsEl = document.createElement('div');
     sessionsEl.className = 'group-sessions' + (isCollapsed ? ' collapsed' : '');
 
-    group.sessions.forEach((session) => {
+    group.sessions.forEach((session, si) => {
       const item = document.createElement('div');
       item.className = 'session-item' + (session.id === activeSessionId ? ' active' : '');
+
+      // Session drag-and-drop
+      item.draggable = true;
+      item.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        e.dataTransfer.setData('type', 'session');
+        e.dataTransfer.setData('sessionId', session.id);
+        e.dataTransfer.setData('fromGroup', gi);
+        item.classList.add('dragging');
+      });
+      item.addEventListener('dragend', () => item.classList.remove('dragging'));
+      item.addEventListener('dragover', (e) => {
+        if (e.dataTransfer.types.includes('type')) {
+          e.preventDefault();
+          e.stopPropagation();
+          item.classList.add('drag-over');
+        }
+      });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+      item.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        item.classList.remove('drag-over');
+        const type = e.dataTransfer.getData('type');
+        if (type === 'session') {
+          const sessionId = e.dataTransfer.getData('sessionId');
+          if (sessionId !== session.id) {
+            workspace = await api.moveSession(sessionId, gi, si);
+            renderSidebar();
+          }
+        }
+      });
 
       const isRunning = runningIds.has(session.id);
       const isVisible = visibleSessionIds.has(session.id);
@@ -295,8 +568,8 @@ function renderSidebar() {
         <span class="session-name">${escHtml(session.name)}</span>
         ${progressHtml}
         <span class="session-actions">
-          <button class="session-btn open-dir" title="Open directory">${icons.folder}</button>
-          <button class="session-btn rename" title="Rename">${icons.pencil}</button>
+          <button class="session-btn open-dir" title="Open working directory">${icons.folder}</button>
+          <button class="session-btn rename" title="Edit">${icons.pencil}</button>
           <button class="session-btn stop ${isRunning ? 'active' : 'inactive'}" title="${isRunning ? 'Stop' : 'Not running'}">${icons.circleStop}</button>
           <button class="session-btn delete" title="Delete session">${icons.trash2}</button>
         </span>
@@ -315,7 +588,7 @@ function renderSidebar() {
 
       item.querySelector('.session-btn.rename').addEventListener('click', (e) => {
         e.stopPropagation();
-        openRenameModal(session);
+        openEditModal(session);
       });
 
       item.querySelector('.session-btn.stop').addEventListener('click', async (e) => {
@@ -480,6 +753,14 @@ function findSessionById(id) {
     for (const s of group.sessions) { if (s.id === id) return s; }
   }
   return null;
+}
+
+function cycleFocus(direction) {
+  const ids = [...visibleSessionIds];
+  if (ids.length <= 1) return;
+  const idx = ids.indexOf(activeSessionId);
+  const next = (idx + direction + ids.length) % ids.length;
+  setActiveSession(ids[next]);
 }
 
 function hideActiveSession() {
@@ -674,6 +955,45 @@ function createSessionView(session) {
     </div>
   `;
 
+  // Workspace column drag-and-drop via header bar
+  const headerBar = view.querySelector('.session-header-bar');
+  headerBar.draggable = true;
+  headerBar.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('type', 'workspace-column');
+    e.dataTransfer.setData('sessionId', session.id);
+    view.classList.add('dragging');
+  });
+  headerBar.addEventListener('dragend', () => view.classList.remove('dragging'));
+  view.addEventListener('dragover', (e) => {
+    if (e.dataTransfer.types.includes('type')) {
+      e.preventDefault();
+      view.classList.add('drag-over');
+    }
+  });
+  view.addEventListener('dragleave', () => view.classList.remove('drag-over'));
+  view.addEventListener('drop', (e) => {
+    e.preventDefault();
+    view.classList.remove('drag-over');
+    const type = e.dataTransfer.getData('type');
+    if (type === 'workspace-column') {
+      const fromId = e.dataTransfer.getData('sessionId');
+      if (fromId !== session.id) {
+        // Reorder visibleSessionIds
+        const ids = [...visibleSessionIds];
+        const fromIdx = ids.indexOf(fromId);
+        const toIdx = ids.indexOf(session.id);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          ids.splice(fromIdx, 1);
+          ids.splice(toIdx, 0, fromId);
+          visibleSessionIds = new Set(ids);
+          lastVisibleKey = ''; // force rebuild
+          updateWorkspaceLayout();
+          renderSidebar();
+        }
+      }
+    }
+  });
+
   view.querySelector('.session-header-close').addEventListener('click', () => {
     visibleSessionIds.delete(session.id);
     if (activeSessionId === session.id) {
@@ -705,6 +1025,11 @@ function createSessionView(session) {
       return false;
     }
     if (e.altKey && e.key === 'F4') return false;
+    // Ctrl+Tab / Ctrl+Shift+Tab: cycle focus between visible sessions
+    if (e.ctrlKey && e.key === 'Tab') {
+      if (e.type === 'keydown') { e.preventDefault(); cycleFocus(e.shiftKey ? -1 : 1); }
+      return false;
+    }
 
     const digit = e.key >= '0' && e.key <= '9' ? e.key : null;
     // Ctrl/Cmd+digit: save layout
@@ -974,7 +1299,7 @@ document.addEventListener('keydown', (e) => {
       if (noBtn) noBtn.click();
       else { const okBtn = document.getElementById('alertOk'); if (okBtn) okBtn.click(); }
     } else if (renameOverlay.classList.contains('visible')) {
-      closeRenameModal();
+      closeEditModal();
     } else if (settingsOverlay.classList.contains('visible')) {
       closeSettings();
     } else if (helpOverlay.classList.contains('visible')) {
@@ -1059,7 +1384,7 @@ const renameForm = document.getElementById('renameForm');
 const renameField = document.getElementById('renameField');
 let renameTargetSession = null;
 
-function openRenameModal(session) {
+function openEditModal(session) {
   renameTargetSession = session;
   renameField.value = session.name;
   renameOverlay.classList.add('visible');
@@ -1067,13 +1392,13 @@ function openRenameModal(session) {
   renameField.select();
 }
 
-function closeRenameModal() {
+function closeEditModal() {
   renameOverlay.classList.remove('visible');
   renameTargetSession = null;
 }
 
-document.getElementById('renameCancel').addEventListener('click', closeRenameModal);
-renameOverlay.addEventListener('click', (e) => { if (e.target === renameOverlay) closeRenameModal(); });
+document.getElementById('renameCancel').addEventListener('click', closeEditModal);
+renameOverlay.addEventListener('click', (e) => { if (e.target === renameOverlay) closeEditModal(); });
 
 renameForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1088,7 +1413,7 @@ renameForm.addEventListener('submit', async (e) => {
     }
     renderSidebar();
   }
-  closeRenameModal();
+  closeEditModal();
 });
 
 // Settings UI

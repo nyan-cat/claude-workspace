@@ -109,6 +109,16 @@ app.whenReady().then(() => {
     return workspaceStore.getData();
   });
 
+  ipcMain.handle('group:move', (event, fromIndex, toIndex) => {
+    workspaceStore.moveGroup(fromIndex, toIndex);
+    return workspaceStore.getData();
+  });
+
+  ipcMain.handle('session:move', (event, sessionId, toGroupIndex, toPosition) => {
+    workspaceStore.moveSession(sessionId, toGroupIndex, toPosition);
+    return workspaceStore.getData();
+  });
+
   ipcMain.handle('session:rename', (event, sessionId, newName) => {
     workspaceStore.renameSession(sessionId, newName);
     return workspaceStore.getData();

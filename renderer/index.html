@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;">
+  <title>Claude Workspace</title>
+  <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header" style="-webkit-app-region: drag;">
+      <div class="header-logo">
+        <span class="logo-icon" id="logoIcon"></span>
+        <span class="logo-text">Claude Workspace</span>
+      </div>
+      <div class="header-workspace-name" id="workspaceName"></div>
+    </header>
+
+    <!-- Main content -->
+    <div class="main">
+      <!-- Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <button class="btn btn-new-group" id="btnNewGroup" title="New Group"><span id="iconPlus"></span> Group</button>
+          <span class="sidebar-top-spacer"></span>
+          <button class="btn btn-icon" id="btnHelp" title="Help"><span id="iconHelp"></span></button>
+          <button class="btn btn-icon" id="btnAbout" title="About"><span id="iconInfo"></span></button>
+          <button class="btn btn-icon" id="btnSettings" title="Settings"><span id="iconSettings"></span></button>
+        </div>
+        <div class="sidebar-groups" id="sidebarGroups"></div>
+      </aside>
+
+      <!-- Resize handle -->
+      <div class="sidebar-resizer" id="sidebarResizer"></div>
+
+      <!-- Workspace -->
+      <main class="workspace" id="workspace">
+        <div class="workspace-empty" id="workspaceEmpty">
+          <div class="empty-icon" id="emptyIcon"></div>
+          <p>Click on a session to open it here</p>
+        </div>
+        <div class="workspace-grid" id="workspaceGrid"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal for creating session/group -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modal">
+      <h3 id="modalTitle">New Session</h3>
+      <form id="modalForm">
+        <div class="form-group">
+          <label for="modalFieldName">Name</label>
+          <input type="text" id="modalFieldName" required autocomplete="off" />
+        </div>
+        <div class="form-group" id="modalDirGroup">
+          <label for="modalFieldDir">Working Directory</label>
+          <div class="dir-input-row">
+            <input type="text" id="modalFieldDir" required autocomplete="off" />
+            <button type="button" class="btn btn-browse" id="btnBrowseDir" title="Browse..."><span id="iconBrowse"></span></button>
+          </div>
+        </div>
+        <div class="modal-buttons">
+          <button type="button" class="btn btn-cancel" id="modalCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Alert/Confirm modal -->
+  <div class="modal-overlay" id="alertOverlay">
+    <div class="modal">
+      <p id="alertMessage" style="margin-bottom: 1em;"></p>
+      <div class="modal-buttons" id="alertButtons"></div>
+    </div>
+  </div>
+
+  <!-- Rename modal -->
+  <div class="modal-overlay" id="renameOverlay">
+    <div class="modal">
+      <h3>Rename Session</h3>
+      <form id="renameForm">
+        <div class="form-group">
+          <label for="renameField">Name</label>
+          <input type="text" id="renameField" required autocomplete="off" />
+        </div>
+        <div class="modal-buttons">
+          <button type="button" class="btn btn-cancel" id="renameCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Rename</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-panel">
+      <h2>Terminal Settings</h2>
+
+      <div class="settings-section">
+        <label for="settingsFont">Font Family</label>
+        <select id="settingsFont">
+          <option value="JetBrains Mono">JetBrains Mono</option>
+          <option value="Fira Code">Fira Code</option>
+          <option value="Hack">Hack</option>
+          <option value="Cascadia Code">Cascadia Code</option>
+          <option value="Consolas">Consolas</option>
+          <option value="Courier New">Courier New</option>
+        </select>
+      </div>
+
+      <div class="settings-section">
+        <label>Font Size</label>
+        <div class="font-size-row">
+          <input type="range" id="settingsFontSize" min="10" max="24" step="1" value="14">
+          <span class="font-size-value" id="fontSizeValue">14px</span>
+        </div>
+      </div>
+
+      <div class="font-preview">
+        <div class="font-preview-header">Preview</div>
+        <div class="font-preview-body" id="fontPreviewBody"><span class="syn-kw">const</span> workspace = <span class="syn-fn">require</span>(<span class="syn-str">'./workspace'</span>);
+
+<span class="syn-kw">function</span> <span class="syn-fn">greet</span>(name) {
+  <span class="syn-cmt">// Hello from Claude Workspace!</span>
+  <span class="syn-kw">return</span> <span class="syn-str">`Welcome, ${</span>name<span class="syn-str">}!`</span>;
+}
+
+<span class="syn-kw">if</span> (user.isReady) {
+  <span class="syn-fn">greet</span>(<span class="syn-str">"Developer"</span>);  <span class="syn-cmt">// =&gt; "Welcome, Developer!"</span>
+}
+
+<span class="syn-num">0123456789</span> !@#$%^&amp;*() {}[]|;:'"&lt;&gt;
+abcdefghijklmnopqrstuvwxyz ABCDEF
+The quick brown fox jumps over lazy dog</div>
+      </div>
+
+      <div class="settings-section">
+        <label for="settingsTheme">Theme</label>
+        <select id="settingsTheme">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+
+      <div class="settings-buttons">
+        <button class="btn btn-cancel" id="settingsCancel">Cancel</button>
+        <button class="btn btn-primary" id="settingsApply">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help overlay -->
+  <div class="modal-overlay" id="helpOverlay">
+    <div class="modal modal-wide">
+      <h3>Keyboard Shortcuts</h3>
+      <table class="help-table"><tbody id="helpTableBody"></tbody></table>
+      <h3 style="margin-top: 1.5em; margin-bottom: 0.4em;">Sessions</h3>
+      <p class="help-text">Sessions persist automatically via Claude Code. Restarting a session resumes from where you left off.</p>
+      <p class="help-text">The silence indicator (5 segments next to session name) shows seconds since last Claude output.</p>
+      <div class="modal-buttons">
+        <button class="btn btn-primary" id="helpClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- About overlay -->
+  <div class="modal-overlay" id="aboutOverlay">
+    <div class="modal">
+      <div class="about-header">
+        <span class="about-icon" id="aboutIcon"></span>
+        <span class="about-title">Claude Workspace</span>
+      </div>
+      <div class="about-body">
+        <p>Version 1.0</p>
+        <p>Built 2026-03-28</p>
+        <p class="about-dim">Desktop app for managing multiple Claude Code sessions simultaneously.</p>
+        <p class="about-link"><a href="#" id="aboutGithub">github.com/nyan-cat/claude-workspace</a></p>
+        <p class="about-copy">&copy; 2026 Denis Sibilev</p>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-primary" id="aboutClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

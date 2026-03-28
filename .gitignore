@@ -1,0 +1,10 @@
+node_modules/
+dist/
+workspace.json
+sessions/
+*.log
+.DS_Store
+Thumbs.db
+.claude/
+publish.cmd
+*.zip

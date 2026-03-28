@@ -1,0 +1,51 @@
+{
+  "name": "claude-workspace",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": [],
+  "author": "Den",
+  "license": "ISC",
+  "description": "Desktop app for managing multiple Claude Code sessions",
+  "build": {
+    "appId": "com.den.claude-workspace",
+    "productName": "Claude Workspace",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "src/**/*",
+      "renderer/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "dir",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": "dir",
+      "identity": null
+    },
+    "linux": {
+      "target": "dir"
+    },
+    "forceCodeSigning": false,
+    "asar": false
+  },
+  "devDependencies": {
+    "electron": "^41.1.0",
+    "electron-builder": "^26.8.1"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "lucide-static": "^1.7.0",
+    "node-pty": "^1.1.0"
+  }
+}

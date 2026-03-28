@@ -445,6 +445,75 @@ html, body {
   position: relative;
 }
 
+/* Workspace tabs bar */
+.workspace-tabs {
+  display: none;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.workspace-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace-tabs.visible {
+  display: flex;
+}
+
+.workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.3em 0.8em;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.1s, background 0.1s;
+}
+
+.workspace-tab:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.workspace-tab.active {
+  color: var(--text-primary);
+  background: var(--accent-dim);
+}
+
+.workspace-tab .tab-status {
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.workspace-tab .tab-status.running-hidden {
+  background: var(--success);
+  opacity: 0.7;
+}
+
+.workspace-tab .tab-status.running-visible {
+  background: var(--success);
+  opacity: 1;
+  box-shadow: 0 0 6px var(--success);
+}
+
+.workspace-tab .tab-name {
+  font-size: 0.85em;
+}
+
+.workspace-body {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
 .workspace-empty {
   position: absolute;
   top: 0;
@@ -507,17 +576,35 @@ html, body {
 
 .session-header-title {
   font-size: 0.85em;
-  font-weight: 600;
-  color: var(--text-dim);
+  font-weight: 700;
+  color: var(--text-secondary);
 }
 
 .session-view.focused .session-header-title {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 .session-header-dir {
-  font-size: 0.7em;
+  font-size: 0.85em;
   color: var(--text-dim);
+  flex: 1;
+}
+
+.session-header-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.session-header-close:hover {
+  color: var(--text-primary);
+  opacity: 1;
 }
 
 .terminal-container {
@@ -549,6 +636,9 @@ html, body {
   right: 0;
   bottom: 0;
 }
+
+/* Link hover in terminal (xterm adds xterm-link-layer for detected links) */
+.xterm-screen .xterm-decoration-overview-ruler { display: none; }
 
 .terminal-container .xterm,
 .terminal-container .xterm-viewport,

@@ -30,6 +30,11 @@ const api = {
   updateSettings: (s) => ipcRenderer.invoke('settings:update', s),
   getLayouts: () => ipcRenderer.invoke('layouts:get'),
   setLayout: (key, ids) => ipcRenderer.invoke('layouts:set', key, ids),
+  // Multi-monitor
+  getDisplays: () => ipcRenderer.invoke('displays:get'),
+  getWindowBounds: () => ipcRenderer.invoke('window:getBounds'),
+  getContentBounds: () => ipcRenderer.invoke('window:getContentBounds'),
+  spanAllMonitors: () => ipcRenderer.invoke('window:spanAllMonitors'),
 };
 
 // Settings
@@ -142,6 +147,7 @@ function recallKeybindingGroup(key) {
   activeSessionId = valid[0];
   renderSidebar();
   updateWorkspaceLayout();
+  setActiveSession(valid[0]);
 }
 
 // Silence tracking
@@ -195,6 +201,7 @@ function debounce(fn, ms) {
 // Init
 async function init() {
   // Set static icons
+  document.getElementById('iconSpanMonitors').innerHTML = icons.maximize;
   document.getElementById('logoIcon').innerHTML = icons.terminal;
   document.getElementById('iconPlus').innerHTML = icons.plus;
   document.getElementById('iconHelp').innerHTML = icons.helpCircle;
@@ -288,6 +295,7 @@ function renderSidebar() {
         <span class="session-name">${escHtml(session.name)}</span>
         ${progressHtml}
         <span class="session-actions">
+          <button class="session-btn open-dir" title="Open directory">${icons.folder}</button>
           <button class="session-btn rename" title="Rename">${icons.pencil}</button>
           <button class="session-btn stop ${isRunning ? 'active' : 'inactive'}" title="${isRunning ? 'Stop' : 'Not running'}">${icons.circleStop}</button>
           <button class="session-btn delete" title="Delete session">${icons.trash2}</button>
@@ -298,6 +306,11 @@ function renderSidebar() {
         if (e.target.closest('.session-btn')) return;
         if (e.ctrlKey || e.metaKey) addSessionToWorkspace(session);
         else showSingleSession(session);
+      });
+
+      item.querySelector('.session-btn.open-dir').addEventListener('click', (e) => {
+        e.stopPropagation();
+        require('child_process').exec(`start "" explorer "${session.working_directory.replace(/\//g, '\\')}"`);
       });
 
       item.querySelector('.session-btn.rename').addEventListener('click', (e) => {
@@ -378,6 +391,55 @@ function renderSidebar() {
 
   // Immediately fill silence bars so they don't flash to 0
   updateSilenceBars();
+  renderTabs();
+}
+
+// Workspace tabs — show all running sessions
+const workspaceTabs = document.getElementById('workspaceTabs');
+
+function renderTabs() {
+  // Collect all running sessions
+  const runningSessions = [];
+  for (const group of workspace.groups) {
+    for (const session of group.sessions) {
+      if (runningIds.has(session.id)) runningSessions.push(session);
+    }
+  }
+
+  if (runningSessions.length === 0) {
+    workspaceTabs.classList.remove('visible');
+    workspaceTabs.innerHTML = '';
+    return;
+  }
+
+  workspaceTabs.classList.add('visible');
+  workspaceTabs.innerHTML = '';
+
+  runningSessions.forEach(session => {
+    const isVisible = visibleSessionIds.has(session.id);
+    const isActive = session.id === activeSessionId;
+
+    let statusClass = '';
+    if (isVisible) statusClass = 'running-visible';
+    else statusClass = 'running-hidden';
+
+    const tab = document.createElement('div');
+    tab.className = 'workspace-tab' + (isActive ? ' active' : '');
+    tab.innerHTML = `
+      <span class="tab-status ${statusClass}"></span>
+      <span class="tab-name">${escHtml(session.name)}</span>
+    `;
+
+    tab.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        addSessionToWorkspace(session);
+      } else {
+        showSingleSession(session);
+      }
+    });
+
+    workspaceTabs.appendChild(tab);
+  });
 }
 
 function showSingleSession(session) {
@@ -428,7 +490,68 @@ function hideActiveSession() {
   updateWorkspaceLayout();
 }
 
-let lastVisibleKey = ''; // track visible set to avoid unnecessary DOM rebuilds
+let lastVisibleKey = '';
+
+// Calculate grid columns that align sessions to monitor boundaries
+async function calcGridColumns(count) {
+  if (count <= 1) return '1fr';
+  try {
+    const displays = await api.getDisplays();
+    if (displays.length <= 1) return `repeat(${count}, 1fr)`;
+
+    const contentBounds = await api.getContentBounds();
+    // Grid starts after sidebar
+    const sidebarW = parseInt(sidebar.style.width) || parseInt(getComputedStyle(sidebar).width) || 230;
+    const gridLeft = contentBounds.x + sidebarW;
+    const gridRight = contentBounds.x + contentBounds.width;
+    const gridWidth = gridRight - gridLeft;
+
+    // Find monitor boundaries within our grid area
+    const monitorEdges = [0]; // relative to grid left
+    for (const d of displays) {
+      const edge = d.bounds.x + d.bounds.width - gridLeft;
+      if (edge > 0 && edge < gridWidth) {
+        monitorEdges.push(edge);
+      }
+    }
+    monitorEdges.push(gridWidth);
+    monitorEdges.sort((a, b) => a - b);
+
+    // Deduplicate edges that are too close
+    const zones = [];
+    for (let i = 0; i < monitorEdges.length - 1; i++) {
+      const w = monitorEdges[i + 1] - monitorEdges[i];
+      if (w > 50) zones.push(w);
+    }
+
+    if (zones.length < 2 || zones.length > count) return `repeat(${count}, 1fr)`;
+
+    // Distribute sessions across zones proportionally
+    const sessionsPerZone = [];
+    let remaining = count;
+    const totalWidth = zones.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < zones.length; i++) {
+      if (i === zones.length - 1) {
+        sessionsPerZone.push(remaining);
+      } else {
+        const share = Math.max(1, Math.round(count * zones[i] / totalWidth));
+        sessionsPerZone.push(Math.min(share, remaining));
+        remaining -= sessionsPerZone[i];
+      }
+    }
+
+    // Build column widths: each session in a zone gets equal share of that zone's width
+    const cols = [];
+    for (let z = 0; z < zones.length; z++) {
+      const n = sessionsPerZone[z];
+      const colW = zones[z] / n;
+      for (let i = 0; i < n; i++) cols.push(Math.round(colW) + 'px');
+    }
+    return cols.join(' ');
+  } catch {
+    return `repeat(${count}, 1fr)`;
+  }
+}
 
 function updateWorkspaceLayout() {
   const count = visibleSessionIds.size;
@@ -446,8 +569,13 @@ function updateWorkspaceLayout() {
   if (layoutChanged) {
     workspaceEmpty.style.display = 'none';
     workspaceGrid.style.display = 'grid';
-    workspaceGrid.style.gridTemplateColumns = `repeat(${count}, 1fr)`;
     workspaceGrid.style.gridTemplateRows = '1fr';
+
+    // Set columns — async but apply immediately with fallback
+    workspaceGrid.style.gridTemplateColumns = `repeat(${count}, 1fr)`;
+    calcGridColumns(count).then(cols => {
+      workspaceGrid.style.gridTemplateColumns = cols;
+    });
 
     Object.values(sessionViews).forEach(entry => {
       if (entry.element.parentNode === workspaceGrid) workspaceGrid.removeChild(entry.element);
@@ -539,11 +667,22 @@ function createSessionView(session) {
     <div class="session-header-bar">
       <span class="session-header-title">${escHtml(session.name)}</span>
       <span class="session-header-dir">${escHtml(session.working_directory)}</span>
+      <button class="session-header-close" title="Hide from workspace">${icons.x}</button>
     </div>
     <div class="terminal-container">
       <div class="starting-overlay">Starting...</div>
     </div>
   `;
+
+  view.querySelector('.session-header-close').addEventListener('click', () => {
+    visibleSessionIds.delete(session.id);
+    if (activeSessionId === session.id) {
+      activeSessionId = visibleSessionIds.size > 0 ? [...visibleSessionIds][0] : null;
+    }
+    renderSidebar();
+    updateWorkspaceLayout();
+    if (activeSessionId) setActiveSession(activeSessionId);
+  });
 
   const termContainer = view.querySelector('.terminal-container');
   const terminal = new Terminal({
@@ -580,14 +719,119 @@ function createSessionView(session) {
     }
     // Copy selection: Ctrl+C, Ctrl+Insert, Enter
     if (e.type === 'keydown' && terminal.hasSelection()) {
-      if ((e.ctrlKey && e.key === 'c') || (e.ctrlKey && e.key === 'Insert') || e.key === 'Enter') {
+      if ((e.ctrlKey && e.code === 'KeyC') || (e.ctrlKey && e.key === 'Insert') || e.key === 'Enter') {
         e.preventDefault();
         navigator.clipboard.writeText(terminal.getSelection());
         terminal.clearSelection();
         return false;
       }
     }
+    // Paste: Ctrl+V, Shift+Insert
+    if (e.type === 'keydown') {
+      if (((e.ctrlKey || e.metaKey) && e.code === 'KeyV') || (e.shiftKey && e.key === 'Insert')) {
+        e.preventDefault();
+        navigator.clipboard.readText().then(text => {
+          if (text) api.writeToSession(session.id, text);
+        });
+        return false;
+      }
+    }
     return true;
+  });
+
+  // Right-click paste
+  view.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    navigator.clipboard.readText().then(text => {
+      if (text) api.writeToSession(session.id, text);
+    });
+  });
+
+  // Ctrl+click links: URLs and file paths
+  const urlRegex = /https?:\/\/[^\s)\]>"'`,]+/g;
+  const unixPathRegex = /\/(?:home|usr|var|tmp|etc|opt|mnt|media)[/\w.-]+/g;
+
+  function findWinPaths(text) {
+    const startRegex = /(?<![a-zA-Z])[A-Z]:[/\\]/gi;
+    const results = [];
+    let m;
+    while ((m = startRegex.exec(text)) !== null) {
+      let end = m.index + m[0].length;
+      let lastSepEnd = end;
+      while (end < text.length) {
+        const ch = text[end];
+        if (':*?"<>|\n\r\t,;'.includes(ch)) break;
+        if (ch === '\\' || ch === '/') lastSepEnd = end + 1;
+        end++;
+      }
+      let finalSeg = text.slice(lastSepEnd, end);
+      finalSeg = finalSeg.replace(/[\s.,:;!?)\]}>'"]+$/, '');
+      const extMatch = finalSeg.match(/^(.+\.\w{1,10})\b/);
+      if (extMatch) {
+        finalSeg = extMatch[1];
+      } else {
+        const spaceIdx = finalSeg.indexOf(' ');
+        if (spaceIdx >= 0) finalSeg = finalSeg.slice(0, spaceIdx);
+      }
+      finalSeg = finalSeg.replace(/[\s.,:;!?)\]}>'"]+$/, '');
+      const fullPath = text.slice(m.index, lastSepEnd) + finalSeg;
+      if (fullPath.length > 3) {
+        results.push({ index: m.index, text: fullPath });
+        startRegex.lastIndex = m.index + fullPath.length;
+      }
+    }
+    return results;
+  }
+
+  function openLink(type, linkText) {
+    if (type === 'url') {
+      require('electron').shell.openExternal(linkText);
+    } else {
+      const fs = require('fs');
+      const pathMod = require('path');
+      let target = linkText.replace(/\//g, '\\');
+      try {
+        if (fs.existsSync(target) && fs.statSync(target).isFile()) {
+          target = pathMod.dirname(target);
+        }
+      } catch {}
+      require('child_process').exec(`explorer "${target}"`);
+    }
+  }
+
+  terminal.registerLinkProvider({
+    provideLinks(lineNumber, callback) {
+      const line = terminal.buffer.active.getLine(lineNumber - 1);
+      if (!line) return callback(undefined);
+      const text = line.translateToString();
+      const links = [];
+
+      function addMatch(index, matchText, type) {
+        links.push({
+          range: {
+            start: { x: index + 1, y: lineNumber },
+            end: { x: index + matchText.length, y: lineNumber },
+          },
+          text: matchText,
+          activate(e, lt) {
+            if (!e.ctrlKey && !e.metaKey) return;
+            openLink(type, lt);
+          },
+        });
+      }
+
+      urlRegex.lastIndex = 0;
+      let um;
+      while ((um = urlRegex.exec(text)) !== null) addMatch(um.index, um[0], 'url');
+
+      for (const p of findWinPaths(text)) addMatch(p.index, p.text, 'path');
+
+      unixPathRegex.lastIndex = 0;
+      let upm;
+      while ((upm = unixPathRegex.exec(text)) !== null) addMatch(upm.index, upm[0], 'path');
+
+      callback(links.length > 0 ? links : undefined);
+    },
   });
 
   terminal.onData((data) => { api.writeToSession(session.id, data); });
@@ -912,6 +1156,14 @@ const helpOverlay = document.getElementById('helpOverlay');
 const aboutOverlay = document.getElementById('aboutOverlay');
 const { shell } = require('electron');
 
+// Span all monitors button
+document.getElementById('btnSpanMonitors').addEventListener('click', async () => {
+  await api.spanAllMonitors();
+  // Recalculate grid after window resize settles
+  lastVisibleKey = '';
+  setTimeout(() => updateWorkspaceLayout(), 300);
+});
+
 document.getElementById('btnHelp').addEventListener('click', () => {
   document.getElementById('helpTableBody').innerHTML = `
     <tr><td class="help-desc">Open session (closes others)</td><td class="help-key">Click</td></tr>
@@ -920,6 +1172,8 @@ document.getElementById('btnHelp').addEventListener('click', () => {
     <tr><td class="help-desc">Save current layout to slot</td><td class="help-key">${mod()} + 0-9</td></tr>
     <tr><td class="help-desc">Recall saved layout</td><td class="help-key">${opt()} + 0-9</td></tr>
     <tr><td class="help-desc">Copy terminal selection</td><td class="help-key">${mod()} + C, &nbsp;${mod()} + Insert, &nbsp;Enter</td></tr>
+    <tr><td class="help-desc">Paste into terminal</td><td class="help-key">${mod()} + V, &nbsp;Shift + Insert, &nbsp;Right Click</td></tr>
+    <tr><td class="help-desc">Newline without sending</td><td class="help-key">${opt()} + Enter</td></tr>
     <tr><td class="help-desc">Close application</td><td class="help-key">${opt()} + F4</td></tr>
   `;
   helpOverlay.classList.add('visible');

@@ -17,6 +17,8 @@
         <span class="logo-text">Claude Workspace</span>
       </div>
       <div class="header-workspace-name" id="workspaceName"></div>
+      <div style="flex:1"></div>
+      <button class="btn btn-icon" id="btnSpanMonitors" title="Span all monitors" style="-webkit-app-region: no-drag; margin-right: 140px;"><span id="iconSpanMonitors"></span></button>
     </header>
 
     <!-- Main content -->
@@ -38,11 +40,14 @@
 
       <!-- Workspace -->
       <main class="workspace" id="workspace">
-        <div class="workspace-empty" id="workspaceEmpty">
-          <div class="empty-icon" id="emptyIcon"></div>
-          <p>Click on a session to open it here</p>
+        <div class="workspace-tabs" id="workspaceTabs"></div>
+        <div class="workspace-body">
+          <div class="workspace-empty" id="workspaceEmpty">
+            <div class="empty-icon" id="emptyIcon"></div>
+            <p>Click on a session to open it here</p>
+          </div>
+          <div class="workspace-grid" id="workspaceGrid"></div>
         </div>
-        <div class="workspace-grid" id="workspaceGrid"></div>
       </main>
     </div>
   </div>
@@ -176,7 +181,7 @@ The quick brown fox jumps over lazy dog</div>
         <span class="about-title">Claude Workspace</span>
       </div>
       <div class="about-body">
-        <p>Version 1.0</p>
+        <p>Version 1.0.2</p>
         <p>Built 2026-03-28</p>
         <p class="about-dim">Desktop app for managing multiple Claude Code sessions simultaneously.</p>
         <p class="about-link"><a href="#" id="aboutGithub">github.com/nyan-cat/claude-workspace</a></p>

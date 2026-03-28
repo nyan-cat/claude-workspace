@@ -26,4 +26,6 @@ module.exports = {
   terminal: loadSvg('terminal', 20),
   trash2: loadSvg('trash-2', 13),
   circleStop: loadSvg('circle-stop', 14),
+  folder: loadSvg('folder', 13),
+  maximize: loadSvg('maximize', 15),
 };

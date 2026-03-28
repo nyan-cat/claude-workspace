@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen } = require('electron');
 const path = require('path');
 const { SessionManager } = require('./src/session-manager');
 const { WorkspaceStore } = require('./src/workspace-store');
@@ -144,6 +144,39 @@ app.whenReady().then(() => {
   ipcMain.handle('layouts:set', (event, key, sessionIds) => {
     workspaceStore.setLayout(key, sessionIds);
     return workspaceStore.getLayouts();
+  });
+
+  // Multi-monitor
+  ipcMain.handle('displays:get', () => {
+    return screen.getAllDisplays().map(d => ({
+      id: d.id,
+      bounds: d.workArea, // usable area (excludes taskbar)
+    }));
+  });
+
+  ipcMain.handle('window:getBounds', () => {
+    return mainWindow.getBounds();
+  });
+
+  ipcMain.handle('window:spanAllMonitors', () => {
+    const displays = screen.getAllDisplays();
+    if (displays.length <= 1) return false;
+    // Span horizontally across all monitors, but respect tallest common workArea vertically
+    let minX = Infinity, maxX = -Infinity;
+    let maxY0 = -Infinity, minYEnd = Infinity;
+    for (const d of displays) {
+      const wa = d.workArea;
+      minX = Math.min(minX, wa.x);
+      maxX = Math.max(maxX, wa.x + wa.width);
+      maxY0 = Math.max(maxY0, wa.y); // highest top (most constrained)
+      minYEnd = Math.min(minYEnd, wa.y + wa.height); // lowest bottom (most constrained)
+    }
+    mainWindow.setBounds({ x: minX, y: maxY0, width: maxX - minX, height: minYEnd - maxY0 });
+    return true;
+  });
+
+  ipcMain.handle('window:getContentBounds', () => {
+    return mainWindow.getContentBounds();
   });
 
   // Forward session data to renderer

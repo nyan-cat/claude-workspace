@@ -6,7 +6,7 @@ Desktop app for managing multiple [Claude Code](https://docs.anthropic.com/en/do
 
 ### Wide display and multiple display ready
 
-![Claude Workspace Wide](app-wide.png)
+![Claude Workspace Wide](app-wide-monitors.png)
 
 ## Features
 

@@ -8,9 +8,8 @@ Workspace config: `workspace.json`.
 
 ### Main process (`main.js`)
 - Electron BrowserWindow with `titleBarStyle: 'hidden'` + `titleBarOverlay` (Windows)
-- `nodeIntegration: true`, `contextIsolation: false` — renderer can require() directly
-- No preload.js — removed (contextBridge requires contextIsolation)
-- IPC handlers for workspace CRUD, session start/stop/write/resize, rename, settings, layouts, dialog:selectFolder, app:platform
+- `nodeIntegration: true`, `contextIsolation: false`, no preload.js
+- IPC handlers for workspace CRUD, session start/stop/write/resize, rename, settings, layouts, dialog:selectFolder, app:platform, multi-monitor (displays:get, window:getBounds, window:getContentBounds, window:spanAllMonitors)
 - Single instance lock (`app.requestSingleInstanceLock()`)
 - Content-Security-Policy set in HTML meta tag
 
@@ -24,19 +23,16 @@ Workspace config: `workspace.json`.
 - New sessions: `claude --session-id <uuid>`
 - Existing sessions: `claude --resume <uuid>` (checked via `.jsonl` file existence)
 - Claude stores sessions in `~/.claude/projects/<encoded-path>/<session-uuid>.jsonl`
-- Path encoding: `D:\projects\foo` → `D--projects-foo`
-- **Important**: `--session-id` on existing session = "already in use" error. Must use `--resume` for existing.
-- **Important**: node-pty may need manual rebuild for Electron on Windows:
-  - Spectre mitigation disabled in `binding.gyp`
-  - winpty target removed (conpty only, Win10+)
-  - winpty.gyp patched
-  - Rebuild: `node-gyp rebuild --target=<electron-ver> --arch=x64 --dist-url=https://electronjs.org/headers`
+- Path encoding: `D:\projects\foo` → `D--projects-foo` (colon becomes dash, not removed)
+- **Important**: `--session-id` on existing session = "already in use" error. Must use `--resume`.
+- **Important**: node-pty may need manual rebuild for Electron on Windows (see README)
 
 ### Workspace store (`src/workspace-store.js`)
 - Reads/writes `workspace.json` (BOM-safe)
 - Creates default workspace.json if missing
 - CRUD for groups/sessions, renameSession
 - Settings, layouts, claudeSessionExists/deleteClaudeSession
+- Path encoding for Claude session detection: colon → dash, slash → dash
 
 ### Renderer (`renderer/`)
 - `index.html` — layout, modals (create session/group, rename, alert/confirm, settings, help, about)
@@ -47,7 +43,7 @@ Workspace config: `workspace.json`.
 
 ### Icons
 - Lucide icons (MIT, `lucide-static` npm package)
-- SVG with `stroke-linecap="round"` and `stroke-linejoin="round"` (rounded corners)
+- SVG with rounded corners (stroke-linecap/linejoin round)
 - Loaded at startup via `icons.js`, inserted into DOM as innerHTML
 
 ### Data storage
@@ -58,18 +54,17 @@ Workspace config: `workspace.json`.
 ## UI Design
 
 ### Color palette — dark/light theme system
-- Themes defined in `THEMES` object in app.js
+- Themes defined in `THEMES` object in app.js with full xterm theme per-mode
 - Dark theme: desaturated cyan accent `#6bb8b0`, dark backgrounds `#0c1115`
 - Light theme: darker cyan accent `#2a8a80`, light backgrounds `#f5f5f0`
 - Applied via CSS variables, switchable in Settings
-- xterm themes also switch per-theme
 
 ### Layout
-- Header — terminal icon logo + workspace name
-- Sidebar (left) — groups → sessions → layouts, resizable (min 140px, max 400px)
-- Sidebar width persisted in workspace.json settings
+- Header — terminal icon logo + workspace name + span-monitors button (right side, 140px margin from window controls)
+- Sidebar (left) — groups → sessions → layouts, resizable (min 140px, max 400px, width persisted)
 - Sidebar resizer: 6px with negative margins (invisible but easy to grab), z-index 5
-- Workspace (right) — CSS Grid, single row of columns
+- Workspace tabs bar — horizontal tabs for all running sessions, above workspace grid
+- Workspace body — CSS Grid, single row of columns (smart multi-monitor alignment)
 
 ### Font system
 - All UI uses terminal font (same family and size everywhere)
@@ -81,66 +76,86 @@ Workspace config: `workspace.json`.
 - **Ctrl/Cmd+Click** — adds session to workspace
 - **Ctrl/Cmd+F4** — hides active session (only in xterm handler, not document level)
 - **Alt/Option+F4** — close app
+- Same click behavior on workspace tabs and sidebar
 
 ### Keybinding groups (layouts)
 - **Ctrl/Cmd+digit** — save layout, **Alt/Option+digit** — recall layout
 - Handlers in both xterm and document keydown
 - Stored in `workspace.json` under `layouts`
 - Sidebar shows as expandable groups with `Alt+N` / `Option+N` headers
+- recallKeybindingGroup calls setActiveSession to sync focus
+
+### Multi-monitor
+- **Span all monitors button** in header (maximize icon)
+- `window:spanAllMonitors` IPC — calculates bounding rect using workArea intersection (respects taskbar)
+- `calcGridColumns()` — async function that queries displays and content bounds, calculates column widths so each session fits within one monitor
+- Falls back to `repeat(N, 1fr)` on single monitor or errors
 
 ### Multi-window workspace
 - CSS Grid columns, no gap (tiles separated by barely-visible border)
-- Focused session: lighter bg, xterm bg changes dynamically, title turns accent color
+- Focused session: lighter bg, xterm bg changes dynamically, title bold/bright
+- Session header: bold title, same-size working dir, close button (×) on right
 - `updateWorkspaceLayout()` tracks `lastVisibleKey` — skips DOM rebuild if visible set unchanged
 - Per-session resize dedup: `lastSentSize` tracks cols,rows — skips PTY resize if unchanged
+
+### Workspace tabs bar
+- Shows all running sessions as horizontal tabs above workspace
+- Each tab: status dot + name, same click/Ctrl+click behavior as sidebar
+- Hidden when no sessions running
 
 ### Session indicators in sidebar
 - Gray dot — not running
 - Green 70% — running, not in workspace
 - Green 100% + glow — running and visible
-- Silence progress bar: 5 segments, fills 1/sec, resets on PTY output
-- `updateSilenceBars()` called at end of `renderSidebar()` to prevent flash-to-zero on re-render
+- Silence progress bar: 5 segments, fills 1/sec, resets on output
+- `updateSilenceBars()` called at end of `renderSidebar()` to prevent flash-to-zero
 
 ### Starting overlay
 - Shows "Starting..." centered over terminal container while Claude boots
-- Hidden when first printable characters detected via `extractPrintable()` (strips ANSI CSI/OSC sequences including private mode `?` sequences, then checks for remaining printable chars)
-- Terminal receives data under the overlay, so content is ready when overlay disappears
+- Hidden when first printable characters detected via `extractPrintable()` (strips all ANSI CSI/OSC sequences including private mode `?` sequences)
 
 ### Clipboard
-- **Ctrl/Cmd+C** with selection — copy (without selection = SIGINT)
-- **Ctrl/Cmd+Insert** — copy selection
-- **Enter** with selection — copy and clear
-- Selection rendered with inverted colors (foreground/background swap)
+- **Copy**: Ctrl/Cmd+C (with selection), Ctrl/Cmd+Insert, Enter — uses `e.code` for layout-independent detection
+- **Paste**: Ctrl/Cmd+V (`e.code === 'KeyV'`), Shift+Insert, Right Click
+- Selection rendered with inverted colors
+
+### Clickable links (Ctrl+click)
+- URLs: regex detection, opens browser via `shell.openExternal`
+- Windows paths: custom `findWinPaths()` parser — handles spaces in names, file extensions, multiple paths per line, trailing punctuation trimming
+- Unix paths: regex for /home, /usr, etc.
+- File paths: if target is a file, opens parent directory
+- Activated only on Ctrl/Cmd+click
+- Windows Explorer opened via `start "" explorer "path"` for foreground focus
 
 ### Dialogs
-- **Custom alert/confirm** — styled modal dialogs (native `prompt()`/`alert()` don't work reliably in Electron)
-- All modals close on Escape (acts as Cancel)
-- Delete session blocked if running — shows "Stop the session before deleting it."
+- **Custom alert/confirm** — styled modal dialogs (`prompt()`/`alert()` unreliable in Electron)
+- **Rename** — modal with pre-filled name
+- All modals close on Escape (cascading priority check)
+- Delete session blocked if running
 
 ### Session management UI
-- **Rename**: pencil icon → modal dialog with pre-filled name
-- **Delete**: trash icon, blocked if session running
+- **Open dir**: folder icon → opens working directory in Explorer (via `start "" explorer`)
+- **Rename**: pencil icon → modal dialog
 - **Stop**: circle-stop icon
-- **New session**: folder picker button (OS native dialog via `dialog.showOpenDialog`)
+- **Delete**: trash icon, blocked if running
+- **New session**: folder picker button (OS native dialog)
 
 ### Settings page
 - Font family, font size (slider 10-24px), theme (dark/light)
 - Live preview with syntax-highlighted code sample
-- Syntax classes: `.syn-kw` (blue), `.syn-fn` (cyan), `.syn-str` (green), `.syn-num` (yellow), `.syn-cmt` (dim italic)
+- Sidebar width persisted on resize mouseup
 
 ### Help & About
-- Help: description left / shortcuts right, platform-aware labels (Ctrl/Cmd, Alt/Option), copy shortcuts merged into one row
-- About: version 1.0, built 2026-03-28, copyright, GitHub link (opens in browser via shell.openExternal)
-
-### Terminal styling
-- xterm scrollbar styled to match theme (6px, transparent track, themed thumb)
-- xterm viewport/screen forced to 100% height with inherited background to prevent bottom gap
+- Help: description left / shortcuts right, platform-aware (Ctrl/Cmd, Alt/Option), includes copy/paste/newline
+- About: version 1.0.2, built 2026-03-28, copyright Denis Sibilev, GitHub link
 
 ## Build
 - `electron-builder --dir` with `asar: false`, `signAndEditExecutable: false`, `CSC_IDENTITY_AUTO_DISCOVERY=false`
 - Output: `dist/win-unpacked/`
+- `publish.cmd` — builds, zips, creates GitHub release (contains PAT token, gitignored)
 - workspace.json created next to exe (`app.isPackaged ? dirname(execPath) : __dirname`)
 - When deploying, preserve existing workspace.json in target directory
+- **Never commit .zip artifacts to git** (causes huge push times)
 
 ## Known issues / Notes
 - GPU cache errors on launch when previous instance holds lock — harmless
@@ -149,3 +164,4 @@ Workspace config: `workspace.json`.
 - `--resume` only works when cwd matches the project directory
 - Ctrl+F4 only in xterm handler (not document) to avoid double-close
 - Single .exe build not feasible with Electron + node-pty native module
+- publish.cmd contains GitHub PAT — gitignored, never commit

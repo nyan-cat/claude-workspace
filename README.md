@@ -4,6 +4,10 @@ Desktop app for managing multiple [Claude Code](https://docs.anthropic.com/en/do
 
 ![Claude Workspace](app.png)
 
+### Wide display and multiple display ready
+
+![Claude Workspace Wide](app-wide.png)
+
 ## Features
 
 - **Multi-session workspace** — run multiple Claude Code sessions simultaneously in a tiled column layout

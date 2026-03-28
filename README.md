@@ -26,6 +26,8 @@ Desktop app for managing multiple [Claude Code](https://docs.anthropic.com/en/do
 | Save layout to slot | Ctrl + 0-9 | Cmd + 0-9 |
 | Recall saved layout | Alt + 0-9 | Option + 0-9 |
 | Copy terminal selection | Ctrl + C / Ctrl + Insert / Enter | Cmd + C / Cmd + Insert / Enter |
+| Paste into terminal | Ctrl + V / Shift + Insert / Right Click | Cmd + V / Shift + Insert / Right Click |
+| Newline without sending | Alt + Enter | Option + Enter |
 | Close application | Alt + F4 | Option + F4 |
 
 ## Getting Started
@@ -80,6 +82,42 @@ The terminal is rendered using [xterm.js](https://xtermjs.org/), providing full 
 - [xterm.js](https://xtermjs.org/) — terminal emulator
 - [node-pty](https://github.com/nicored/node-pty) — pseudo-terminal
 - [Lucide](https://lucide.dev/) — icons
+
+## Version History
+
+### v1.0.2 (2026-03-28)
+- Paste support: Ctrl+V, Shift+Insert, right-click
+- Ctrl+click to open links (browser) and file paths (Explorer/Finder)
+- Multi-monitor: span-all-monitors button, smart grid aligns sessions to monitor boundaries
+- Workspace tabs bar showing all running sessions
+- Session window header: close button, bold title, working directory path
+- Open working directory button in sidebar
+- Rename session via modal dialog
+- Delete blocked while session is running
+- Custom styled alert/confirm dialogs (replaces system dialogs)
+- Sidebar width persisted in workspace.json
+- Keyboard shortcuts work on any keyboard layout
+- Fix: session path encoding for resume detection
+- Fix: removed unused preload.js, added Content-Security-Policy
+
+### v1.0.1 (2026-03-28)
+- Fix: session resume — path encoding bug caused `--resume` to never trigger
+- Removed build artifacts from git history
+
+### v1.0.0 (2026-03-28)
+- Initial release
+- Multi-session workspace with tiled column layout
+- Session groups with collapsible sidebar navigation
+- Persistent sessions via Claude Code native session management
+- Layout presets (Ctrl+0-9 save, Alt+0-9 recall)
+- Silence indicator (5-segment progress bar)
+- Full PTY terminal via xterm.js + node-pty (ConPTY)
+- Bundled fonts: JetBrains Mono, Fira Code, Hack
+- Dark and light themes
+- Settings page with live font preview
+- Lucide SVG icons
+- Single instance lock
+- Help and About dialogs
 
 ## License
 

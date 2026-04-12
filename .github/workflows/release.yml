@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  desktop:
     strategy:
       matrix:
         include:
@@ -30,9 +30,11 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
+        working-directory: desktop
         run: npm ci
 
       - name: Build
+        working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npx electron-builder --dir --${{ matrix.platform }} --x64
@@ -41,14 +43,14 @@ jobs:
         if: matrix.platform == 'win'
         shell: bash
         run: |
-          cd dist/win-unpacked
-          7z a -tzip "../../${{ matrix.artifact }}.zip" .
+          cd desktop/dist/win-unpacked
+          7z a -tzip "../../../${{ matrix.artifact }}.zip" .
 
       - name: Package artifact (Linux)
         if: matrix.platform == 'linux'
         run: |
-          cd dist/linux-unpacked
-          tar -czf "../../${{ matrix.artifact }}.tar.gz" .
+          cd desktop/dist/linux-unpacked
+          tar -czf "../../../${{ matrix.artifact }}.tar.gz" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -59,7 +61,7 @@ jobs:
             ${{ matrix.artifact }}.tar.gz
 
   release:
-    needs: build
+    needs: desktop
     runs-on: ubuntu-latest
 
     steps:

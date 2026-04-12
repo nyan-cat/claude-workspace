@@ -948,6 +948,7 @@ html, body {
 /* Font preview */
 .font-preview {
   margin-top: 1.2em;
+  margin-bottom: 1.2em;
   border-radius: 6px;
   overflow: hidden;
 }
